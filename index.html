@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>城渡船 釣果アナライザ | 三重県尾鷲市 三木浦</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============ HERO ============ -->
+<header class="hero">
+  <div class="hero-bg">
+    <div class="ray r1"></div><div class="ray r2"></div><div class="ray r3"></div>
+    <div class="bubbles" id="bubbles"></div>
+    <svg class="fish-silhouette f-big" viewBox="0 0 600 240" aria-hidden="true">
+      <path d="M20,120 C90,40 210,20 330,50 C400,68 450,92 500,120 C450,148 400,172 330,190 C210,220 90,200 20,120 Z"/>
+      <path d="M500,120 C530,96 560,72 585,52 C578,96 578,144 585,188 C560,168 530,144 500,120 Z"/>
+      <path d="M250,58 C280,20 330,10 360,26 C330,34 300,46 275,64 Z"/>
+      <circle class="eye" cx="95" cy="112" r="11"/>
+    </svg>
+    <svg class="fish-silhouette f-small" viewBox="0 0 600 240" aria-hidden="true">
+      <path d="M20,120 C90,40 210,20 330,50 C400,68 450,92 500,120 C450,148 400,172 330,190 C210,220 90,200 20,120 Z"/>
+      <path d="M500,120 C530,96 560,72 585,52 C578,96 578,144 585,188 C560,168 530,144 500,120 Z"/>
+      <circle class="eye" cx="95" cy="112" r="11"/>
+    </svg>
+  </div>
+
+  <div class="hero-inner">
+    <p class="kicker">三重県尾鷲市 三木浦漁港 ／ イカダ・カセ釣り</p>
+    <h1 class="hero-title"><span>城渡船</span><em>釣果アナライザ</em></h1>
+    <p class="hero-lead">
+      公式サイトの釣果記録を丸ごと解析。<br>
+      潮が動く日、喰う時間、効く餌 —— 次の一匹は、データが教えてくれる。
+    </p>
+    <div class="hero-stats" id="heroStats"></div>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="#predict">この日の釣果を予想する</a>
+      <a class="btn btn-ghost" href="#dashboard">データを見る</a>
+    </div>
+  </div>
+  <div class="waves"><div class="wave w1"></div><div class="wave w2"></div><div class="wave w3"></div></div>
+</header>
+
+<nav class="nav-sticky">
+  <div class="nav-inner">
+    <span class="nav-brand">城渡船 釣果アナライザ</span>
+    <a href="#dashboard">ダッシュボード</a>
+    <a href="#database">釣果データベース</a>
+    <a href="#predict">釣果予想</a>
+    <a href="https://zekkouchou.com/shirotosen/catch.php" target="_blank" rel="noopener">元サイト ↗</a>
+  </div>
+</nav>
+
+<!-- ============ DASHBOARD ============ -->
+<main>
+<section id="dashboard" class="section">
+  <div class="section-head">
+    <h2>ダッシュボード</h2>
+    <p>グラフの集計軸を切り替えて、釣果の傾向を掘り下げます。</p>
+  </div>
+
+  <div class="controls">
+    <div class="ctrl">
+      <label>集計軸</label>
+      <div class="segmented" id="axisSeg">
+        <button data-axis="species" class="on">全魚種</button>
+        <button data-axis="size">大きさ(10cm)</button>
+        <button data-axis="perSpecies">魚種ごと</button>
+        <button data-axis="hour">時間帯</button>
+        <button data-axis="phase">潮汐(上げ下げ)</button>
+        <button data-axis="tide">潮回り(大潮等)</button>
+        <button data-axis="daily">日別</button>
+      </div>
+    </div>
+    <div class="ctrl-row">
+      <div class="ctrl">
+        <label for="fSpecies">魚種で絞り込み</label>
+        <select id="fSpecies"><option value="">すべての魚種</option></select>
+      </div>
+      <div class="ctrl">
+        <label for="fTide">潮回りで絞り込み</label>
+        <select id="fTide"><option value="">すべての潮</option></select>
+      </div>
+      <div class="ctrl">
+        <label for="fFrom">期間</label>
+        <div class="range"><input type="date" id="fFrom"><span>〜</span><input type="date" id="fTo"></div>
+      </div>
+      <div class="ctrl">
+        <label>表示する値</label>
+        <div class="segmented" id="metricSeg">
+          <button data-metric="records" class="on">件数</button>
+          <button data-metric="count" class="warm">総数（匹数）</button>
+        </div>
+      </div>
+      <div class="ctrl end"><button class="btn btn-mini" id="btnReset">条件をリセット</button></div>
+    </div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+  <div id="chartArea"></div>
+</section>
+
+<!-- ============ DATABASE ============ -->
+<section id="database" class="section alt">
+  <div class="section-head">
+    <h2>釣果データベース</h2>
+    <p>行をクリックすると、その日の釣果写真が開きます。上のフィルタが反映されます。</p>
+  </div>
+  <div class="table-tools">
+    <input type="search" id="q" placeholder="魚種・コメント・日付で検索…">
+    <span class="muted" id="tableCount"></span>
+  </div>
+  <div class="table-wrap">
+    <table id="db">
+      <thead><tr>
+        <th data-k="date">日付</th><th data-k="species">魚種</th><th data-k="sizeRaw">サイズ</th>
+        <th data-k="countRaw">匹数</th><th data-k="tide">潮回り</th><th data-k="fisher">釣り人</th>
+        <th data-k="comment">コメント</th><th>写真</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="more-wrap"><button class="btn btn-ghost" id="btnMore"></button></div>
+</section>
+
+<!-- 写真ライトボックス -->
+<div id="lightbox" hidden>
+  <div class="lb-panel" role="dialog" aria-modal="true" aria-label="釣果写真">
+    <button class="lb-close" aria-label="閉じる">×</button>
+    <h3 id="lbTitle"></h3>
+    <div id="lbMeta" class="lb-meta"></div>
+    <div id="lbImgs" class="lb-imgs"></div>
+    <p id="lbComment" class="lb-comment"></p>
+    <a id="lbSrc" class="photo-link" target="_blank" rel="noopener">元サイトの釣果ページを開く ↗</a>
+  </div>
+</div>
+
+<!-- ============ PREDICT ============ -->
+<section id="predict" class="section">
+  <div class="section-head">
+    <h2>釣果予想</h2>
+    <p>日付を入れると、時期・潮・天気予報から「何が・いつ・どんな餌で」釣れそうかを提案します。</p>
+  </div>
+  <div class="predict-form">
+    <input type="date" id="pDate">
+    <button class="btn btn-primary" id="btnPredict">予想する</button>
+    <span class="muted">3ヶ月以内の日付を推奨。予報がない先の日付は、過去同時期の実績天候から推定します。</span>
+  </div>
+  <div id="predictOut"></div>
+</section>
+
+<footer class="site-foot">
+  <p>データ出典：<a href="https://zekkouchou.com/shirotosen/catch.php" target="_blank" rel="noopener">城渡船 公式サイト 最新釣り情報</a>
+     （2026-07-20 取得・全 <b id="footCount">—</b> 件／<code>node scrape.js</code> で更新できます）</p>
+  <p class="muted">天気：Open-Meteo API ／ 潮汐・日出没：本ツール内の簡易推算（実データとの潮名一致率 85%）。実釣の際は必ず公式の潮汐表・気象情報をご確認ください。</p>
+</footer>
+</main>
+
+<script src="data.js"></script>
+<script src="lib.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# エディタ・OS
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# ローカル設定
+.claude/
+
+# Node
+node_modules/
