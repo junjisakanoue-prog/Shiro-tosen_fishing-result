@@ -1,0 +1,45 @@
+name: 釣果データの自動更新
+
+# 毎日 日本時間 11:00 に実行（GitHub Actions の cron は UTC なので 02:00 UTC）。
+# ※ GitHub 側の負荷により、実際の起動は数分〜十数分ずれることがあります。
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:   # 手動でも実行できるようにする（Actions タブの「Run workflow」）
+
+# data.js をコミットして push するための書き込み権限
+permissions:
+  contents: write
+
+# 同時に複数走らないようにする
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      - name: Node.js をセットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 釣果データを再取得
+        run: node scrape.js
+
+      - name: 変更があればコミットして push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- data.js; then
+            echo "データに変更はありませんでした。"
+          else
+            git add data.js
+            git commit -m "釣果データを自動更新（$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST')）"
+            git push
+            echo "データを更新しました。"
+          fi
