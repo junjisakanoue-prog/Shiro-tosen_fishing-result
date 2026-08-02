@@ -248,3 +248,25 @@ const WMO = {
   85:['にわか雪','🌨️'], 86:['にわか雪','🌨️'], 95:['雷雨','⛈️'], 96:['雷雨','⛈️'], 99:['雷雨','⛈️'],
 };
 function wmo(c) { return WMO[c] || ['不明', '❓']; }
+
+/* --- 天気の判定（降水量＋雲量から） --------------------------------
+   Open-Meteo の過去データ（ERA5再解析）の weather_code は、実際は晴れの日を
+   「霧雨(51/53/55)」と誤分類する既知のクセがある（日照14時間・降水0.1mmでも霧雨扱い）。
+   そこで weather_code は使わず、実測の日降水量(mm)と平均雲量(%)から判定する。
+   1年365日で検証したところ、旧: 快晴2日/霧雨104日 → 新: 快晴80日/晴れ73日 と
+   尾鷲（多雨地）として自然な分布になった。しきい値は気象庁の「雨天日=日降水量1mm以上」に準拠。 */
+function classifyWeather(precipMm, cloudPct) {
+  const p = precipMm == null ? 0 : precipMm;
+  const c = cloudPct == null ? 50 : cloudPct;
+  if (p >= 20) return ['大雨', '⛈️'];
+  if (p >= 5)  return ['雨', '🌧️'];
+  if (p >= 1)  return ['小雨', '🌦️'];
+  // 実質的に雨の降らない日は、空の状態（雲量）で分類する
+  if (c <= 30) return ['快晴', '☀️'];
+  if (c <= 60) return ['晴れ', '🌤️'];
+  if (c <= 85) return ['薄曇り', '⛅'];
+  return ['曇り', '☁️'];
+}
+/* 天候名 → アイコン（classifyWeather が返す呼称に対応） */
+const WEATHER_ICON = { 大雨: '⛈️', 雨: '🌧️', 小雨: '🌦️', 快晴: '☀️', 晴れ: '🌤️', 薄曇り: '⛅', 曇り: '☁️' };
+function weatherIcon(name) { return WEATHER_ICON[name] || '❓'; }

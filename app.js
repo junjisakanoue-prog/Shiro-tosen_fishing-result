@@ -5,9 +5,9 @@ const $$ = s => [...document.querySelectorAll(s)];
 
 const fmtH = h => String(Math.floor(h)).padStart(2, '0') + ':' + String(Math.round((h % 1) * 60)).padStart(2, '0');
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 30;
 const state = { axis: 'species', species: '', tide: '', from: '', to: '', metric: 'records',
-                q: '', sortK: 'date', sortDir: -1, showAll: false };
+                q: '', sortK: 'date', sortDir: -1, page: 0 };
 
 /* ---------- HERO 装飾 ---------- */
 (function bubbles() {
@@ -303,16 +303,19 @@ function renderTable(rows) {
     return (av < bv ? -1 : av > bv ? 1 : 0) * state.sortDir;
   });
   TABLE_ROWS = r;
-  const shown = state.showAll ? r : r.slice(0, PAGE_SIZE);
-  $('#tableCount').textContent = state.showAll || r.length <= PAGE_SIZE
-    ? `${r.length} 件を表示`
-    : `${r.length} 件中 ${shown.length} 件を表示`;
-  const more = $('#btnMore');
-  if (r.length <= PAGE_SIZE) more.hidden = true;
-  else { more.hidden = false; more.textContent = state.showAll ? '折りたたむ' : `すべて表示（残り ${r.length - PAGE_SIZE} 件）`; }
-  /* data-label はスマホでカード表示にしたとき、各セルの見出しとして使う */
+  /* 30件ごとにページ分割。フィルタ結果が減ってページが範囲外になったら丸める */
+  const pageCount = Math.max(1, Math.ceil(r.length / PAGE_SIZE));
+  if (state.page >= pageCount) state.page = pageCount - 1;
+  if (state.page < 0) state.page = 0;
+  const start = state.page * PAGE_SIZE;
+  const shown = r.slice(start, start + PAGE_SIZE);
+  $('#tableCount').textContent = r.length
+    ? `${r.length} 件中 ${start + 1}〜${start + shown.length} 件を表示`
+    : '0 件';
+  /* data-label はスマホでカード表示にしたとき、各セルの見出しとして使う。
+     data-i はページ内の相対indexではなく TABLE_ROWS 全体の絶対indexを渡す。 */
   $('#db tbody').innerHTML = shown.map((c, i) => `
-    <tr data-i="${i}">
+    <tr data-i="${start + i}">
       <td data-label="日付">${c.date.replace(/-/g, '/')}<span class="muted">（${c.dow}）</span></td>
       <td data-label="魚種" class="sp">${c.species}</td>
       <td data-label="サイズ">${c.sizeRaw || '<span class="muted">—</span>'}</td>
@@ -324,6 +327,27 @@ function renderTable(rows) {
         ? `<span class="photo-link">📷 写真 ${c.imgs.length}枚</span>`
         : '<span class="muted">写真なし</span>'}</td>
     </tr>`).join('') || '<tr><td colspan="8" class="empty">該当なし</td></tr>';
+  renderPager(pageCount);
+}
+
+/* ページ送り（同じフレーム内でページ遷移） */
+function renderPager(pageCount) {
+  const pager = $('#pager');
+  if (pageCount <= 1) { pager.innerHTML = ''; return; }
+  const cur = state.page;
+  /* 先頭・末尾・現在ページの前後を出し、離れた部分は … で省略する */
+  const nums = new Set([0, pageCount - 1, cur, cur - 1, cur + 1]);
+  const items = [];
+  let prev = -1;
+  [...nums].filter(n => n >= 0 && n < pageCount).sort((a, b) => a - b).forEach(n => {
+    if (n - prev > 1) items.push('<span class="pg-gap">…</span>');
+    items.push(`<button class="pg-num${n === cur ? ' on' : ''}" data-page="${n}">${n + 1}</button>`);
+    prev = n;
+  });
+  pager.innerHTML =
+    `<button class="pg-nav" data-page="${cur - 1}" ${cur === 0 ? 'disabled' : ''}>‹ 前へ</button>` +
+    `<div class="pg-nums">${items.join('')}</div>` +
+    `<button class="pg-nav" data-page="${cur + 1}" ${cur === pageCount - 1 ? 'disabled' : ''}>次へ ›</button>`;
 }
 
 /* ---------- 再描画 ---------- */
@@ -346,14 +370,21 @@ $('#metricSeg').addEventListener('click', e => {
   $$('#metricSeg button').forEach(x => x.classList.toggle('on', x === b));
   state.metric = b.dataset.metric; render();
 });
+/* 絞り込みが変わったら1ページ目に戻す */
 const bind = (sel, key) => $(sel).addEventListener('input', e => {
-  state[key] = e.target.value; state.showAll = false; render();
+  state[key] = e.target.value; state.page = 0; render();
 });
 bind('#fSpecies', 'species'); bind('#fTide', 'tide'); bind('#fFrom', 'from');
 bind('#fTo', 'to'); bind('#q', 'q');
-$('#btnMore').addEventListener('click', () => { state.showAll = !state.showAll; renderTable(filtered()); });
+/* ページ送り。押したらテーブル先頭までスクロールする（フレーム内で遷移） */
+$('#pager').addEventListener('click', e => {
+  const b = e.target.closest('button[data-page]'); if (!b || b.disabled) return;
+  state.page = +b.dataset.page;
+  renderTable(filtered());
+  $('#database').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
 $('#btnReset').addEventListener('click', () => {
-  Object.assign(state, { species: '', tide: '', from: '', to: '', metric: 'records', q: '', showAll: false });
+  Object.assign(state, { species: '', tide: '', from: '', to: '', metric: 'records', q: '', page: 0 });
   ['#fSpecies', '#fTide', '#fFrom', '#fTo', '#q'].forEach(s => $(s).value = '');
   $$('#metricSeg button').forEach(x => x.classList.toggle('on', x.dataset.metric === 'records'));
   render();
@@ -416,20 +447,22 @@ async function getWeather(y, m, d) {
   if (daysAhead >= 0 && daysAhead <= 15) {
     try {
       const u = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}` +
-        `&daily=weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_sum` +
+        `&daily=temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_sum,cloud_cover_mean` +
         `&timezone=Asia%2FTokyo&start_date=${iso}&end_date=${iso}`;
       const j = await (await fetch(u)).json();
-      if (j.daily && j.daily.weather_code && j.daily.weather_code[0] != null) {
+      if (j.daily && j.daily.time && j.daily.time.length) {
+        const rain = j.daily.precipitation_sum[0], cloud = j.daily.cloud_cover_mean[0];
+        const [name, icon] = classifyWeather(rain, cloud);
         return {
-          source: '気象予報', forecast: true, code: j.daily.weather_code[0],
+          source: '気象予報', forecast: true, name, icon,
           tmax: j.daily.temperature_2m_max[0], tmin: j.daily.temperature_2m_min[0],
-          wind: j.daily.wind_speed_10m_max[0], rain: j.daily.precipitation_sum[0],
+          wind: j.daily.wind_speed_10m_max[0], rain, cloud,
         };
       }
     } catch (e) { /* 過去実績にフォールバック */ }
   }
 
-  // 予報がない → 過去10年の同月日（±3日）で最も多かった天気
+  // 予報がない → 過去10年の同月日（±3日）の実測から天候のシェアを求める
   try {
     const yrs = [];
     for (let i = 1; i <= 10; i++) yrs.push(y - i);
@@ -437,35 +470,36 @@ async function getWeather(y, m, d) {
       const s = new Date(Date.UTC(yy, m - 1, d - 3)), e = new Date(Date.UTC(yy, m - 1, d + 3));
       const f = dt => dt.toISOString().slice(0, 10);
       return `https://archive-api.open-meteo.com/v1/archive?latitude=${LAT}&longitude=${LON}` +
-        `&daily=weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max` +
+        `&daily=precipitation_sum,cloud_cover_mean,temperature_2m_max,temperature_2m_min,wind_speed_10m_max` +
         `&timezone=Asia%2FTokyo&start_date=${f(s)}&end_date=${f(e)}`;
     });
     const res = await Promise.all(reqs.map(u => fetch(u).then(r => r.json()).catch(() => null)));
-    const codes = [], tmax = [], tmin = [], wind = [];
+    /* weather_code は使わず、降水量＋雲量から日ごとに天候を判定してシェアを集計する */
+    const names = [], tmax = [], tmin = [], wind = [];
     res.forEach(j => {
-      if (!j || !j.daily) return;
-      j.daily.weather_code.forEach((c, i) => {
-        if (c == null) return;
-        codes.push(c); tmax.push(j.daily.temperature_2m_max[i]);
+      if (!j || !j.daily || !j.daily.time) return;
+      j.daily.time.forEach((_, i) => {
+        const p = j.daily.precipitation_sum[i], cc = j.daily.cloud_cover_mean[i];
+        if (p == null && cc == null) return;
+        names.push(classifyWeather(p, cc)[0]);
+        tmax.push(j.daily.temperature_2m_max[i]);
         tmin.push(j.daily.temperature_2m_min[i]); wind.push(j.daily.wind_speed_10m_max[i]);
       });
     });
-    if (!codes.length) return { source: '取得できず', code: null };
-    /* 天気コードを「快晴/晴れ/曇り/雨…」の呼称単位にまとめてシェアを出す */
+    if (!names.length) return { source: '取得できず', name: null };
     const freq = {};
-    codes.forEach(c => { const n = wmo(c)[0]; (freq[n] || (freq[n] = { n: 0, code: c })).n++; });
-    const dist = Object.entries(freq).map(([name, o]) => [name, o.n, o.code])
-      .sort((a, b) => b[1] - a[1]);
-    const top = dist[0];
+    names.forEach(n => freq[n] = (freq[n] || 0) + 1);
+    const dist = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+    const topName = dist[0][0];
     const avg = a => a.filter(x => x != null).reduce((s, x) => s + x, 0) / a.filter(x => x != null).length;
     return {
-      source: `過去10年の同時期実績（${codes.length}日分）`, code: top[2],
-      forecast: false,
+      source: `過去10年の同時期実績（${names.length}日分）`, forecast: false,
+      name: topName, icon: weatherIcon(topName),
       tmax: +avg(tmax).toFixed(1), tmin: +avg(tmin).toFixed(1), wind: +avg(wind).toFixed(1),
-      share: Math.round(top[1] / codes.length * 100),
-      dist: dist.map(([name, n]) => [name, n]), sample: codes.length,
+      share: Math.round(dist[0][1] / names.length * 100),
+      dist, sample: names.length,
     };
-  } catch (e) { return { source: '取得できず', code: null }; }
+  } catch (e) { return { source: '取得できず', name: null }; }
 }
 
 /* 魚種スコアリング：月の一致 × 潮回りの一致 × 直近性 */
@@ -504,13 +538,12 @@ function scoreSpecies(y, m, d) {
 
 /* 天候によるコメント補正 */
 function weatherAdvice(w) {
-  if (w.code == null) return '天候データが取得できませんでした。現地の予報をご確認ください。';
-  const [name] = wmo(w.code);
-  if ([95, 96, 99, 82].includes(w.code)) return '雷雨・強雨の予報。イカダ／カセは中止・変更の可能性が高いため、必ず事前に問い合わせを。';
+  if (!w.name) return '天候データが取得できませんでした。現地の予報をご確認ください。';
+  if (w.name === '大雨') return '大雨の予報。荒天時はイカダ／カセの出船中止・変更もあるため、必ず事前に問い合わせを。';
   if (w.wind >= 30) return `最大風速 ${w.wind}km/h の予報。風裏のイカダを選ぶか、日程変更も検討を。`;
-  if ([61, 63, 65, 80, 81].includes(w.code)) return '雨予報。濁りが入ると魚の警戒心が緩み、日中でも喰いが立つことがあります。雨具と防寒を。';
-  if (w.code === 0 || w.code === 1) return `${name}・凪の予報。日中は喰いが渋りやすいので、朝夕マズメに勝負を。`;
-  return `${name}の予報。曇天は光量が落ちて一日を通して口を使いやすい、釣り人にとって好条件です。`;
+  if (w.name === '雨' || w.name === '小雨') return '雨予報。濁りが入ると魚の警戒心が緩み、日中でも喰いが立つことがあります。雨具と防寒を。';
+  if (w.name === '快晴' || w.name === '晴れ') return `${w.name}・凪になりやすい予報。日中は喰いが渋りがちなので、朝夕マズメに勝負を。`;
+  return `${w.name}の予報。曇天は光量が落ちて一日を通して口を使いやすい、釣り人にとって好条件です。`;
 }
 
 /* ---------- 予想の描画 ---------- */
@@ -524,7 +557,7 @@ async function predict(iso) {
   const sun = sunTimes(y, m, d);
   const ev = tideEvents(y, m, d);
   const age = moonAge(y, m, d);
-  const [wName, wIcon] = wmo(w.code);
+  const wName = w.name || '不明', wIcon = w.icon || '❓';
   const dow = '日月火水木金土'[new Date(y, m - 1, d).getDay()];
 
   /* 狙い目の時間帯：マズメ ∩ 潮が動く時間 */
